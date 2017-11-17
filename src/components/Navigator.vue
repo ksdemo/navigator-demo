@@ -63,7 +63,7 @@ export default {
         'false': []
       }
 
-      for (var i = 0; i < arr.length; i++) {
+      for (let i = 0; i < arr.length; i++) {
         const item = arr[i]
         if (iteratee(item)) {
           part['true'].push(item)
@@ -78,23 +78,32 @@ export default {
 
       part['true'].sort(sortIteratee)
 
-      for (var i = 0; i < arr.length; i++) {
+      for (let i = 0; i < arr.length; i++) {
         const value = arr[i]
         if (filterIteratee(value)) {
           arr[i] = part['true'].shift()
         }
       }
     },
+    // truncate sub paths and parameters, and replace slashes with hyphen, as is not a valid dom selector
     getNavigatorPageId(key) {
-      return 'navigator-page-' + key
+      return 'navigator-page-' + key.replace(/\/.*/, '').replace(/\//g, '-')
     },
+    // a router view is a main stage, when the path name starts with the keyword
     isMain(path) {
-      return this.main.indexOf(path) > -1
+      for (var i = 0; i < this.main.length; i++) {
+        const _path = this.main[i]
+        const regExp = new RegExp('^' + _path)
+        if (regExp.test(path)) {
+          return true
+        }
+      }
+      return false
     },
     randomStr() {
       const possible = '0123456789abcdef'
       let str = ''
-      for (var i = 0; i < 4; i++) {
+      for (let i = 0; i < 4; i++) {
         const index = Math.floor(Math.random() * possible.length)
         str += possible[index]
       }
@@ -104,7 +113,7 @@ export default {
       this.clear = true
     },
     clearSubCaches(toRoute) {
-      for (var routeName in this.cache) {
+      for (let routeName in this.cache) {
         if (this.cache.hasOwnProperty(routeName)) {
           if (!this.isMain(routeName) && toRoute !== routeName) {
             delete this.cache[routeName]
@@ -124,7 +133,7 @@ export default {
         key: key, // essential! a specified key will enable vue patcher to find the exact cached patcher
         attrs: {
           id: this.getNavigatorPageId(routeName),
-          route: routeName
+          route: routeName.replace(/\/.*/, '').replace(/\//g, '-')
         }
       }, [vNode])
     },
@@ -151,7 +160,7 @@ export default {
       this.interleavedSort(vNodes, (vNode) => {
         return this.isMain(vNode.data.attrs.route)
       }, (aNode, bNode) => {
-        return aNode.data.attrs.route === toRoute
+        return aNode.data.attrs.route === toRoute.replace(/\/.*/, '').replace(/\//g, '-')
       })
       setTimeout(() => {
         const toDom = document.querySelector('#' + this.getNavigatorPageId(toRoute))
@@ -161,7 +170,7 @@ export default {
     },
     mainToSub(vNodes, fromRoute, toRoute) {
       // ensure that main stage is next to end of vNodes, and sub stage is the end of vNodes
-      for (var i = 0; i < vNodes.length; i++) {
+      for (let i = 0; i < vNodes.length; i++) {
         const vNode = vNodes[i]
         // move matched vNode to the end of the vNode array
         if (vNode.data.attrs.route === fromRoute) {
@@ -170,10 +179,16 @@ export default {
           break
         }
       }
-      for (var i = 0; i < vNodes.length; i++) {
+
+      for (let i = 0; i < vNodes.length; i++) {
         const vNode = vNodes[i]
         // move matched vNode to the end of the vNode array
         if (vNode.data.attrs.route === toRoute) {
+          // make toDom invisible before mounting
+          if (!vNode.data.style) {
+            vNode.data.style = {}
+          }
+          vNode.data.style.display = 'none'
           vNodes.splice(i, 1)
           vNodes.push(vNode)
           break
@@ -189,6 +204,7 @@ export default {
           this.onLeave(fromDom, this.transitionEndCallback)
         }, 50);
 
+        toDom.style.display = 'block'
         this.onBeforeEnter(toDom, this.transitionEndCallback)
         setTimeout(() => {
           this.onEnter(toDom, this.transitionEndCallback)
@@ -197,7 +213,7 @@ export default {
     },
     subToMain(vNodes, fromRoute, toRoute) {
       // ensure that main stage is next to end of vNodes, and sub stage is the end of vNodes
-      for (var i = 0; i < vNodes.length; i++) {
+      for (let i = 0; i < vNodes.length; i++) {
         const vNode = vNodes[i]
         // move matched vNode to the end of the vNode array
         if (vNode.data.attrs.route === toRoute) {
@@ -206,7 +222,7 @@ export default {
           break
         }
       }
-      for (var i = 0; i < vNodes.length; i++) {
+      for (let i = 0; i < vNodes.length; i++) {
         const vNode = vNodes[i]
         // move matched vNode to the end of the vNode array
         if (vNode.data.attrs.route === fromRoute) {
@@ -258,7 +274,7 @@ export default {
       return this._vnode
     }
 
-    this.toRoute = this.$route.path.replace(/\//g, '')
+    this.toRoute = this.$route.path.replace(/\//, '')
     // when render function is called by transitionEndCallback (this.clear === true)
     // because this.cache is updated at this time
     // we only need to return a composed vnode based on cache
@@ -266,7 +282,7 @@ export default {
       this.clear = false
 
       let childVNodes = []
-      for (var route in this.cache) {
+      for (let route in this.cache) {
         if (this.cache.hasOwnProperty(route)) {
           childVNodes.push(this.cache[route])
         }
@@ -289,7 +305,14 @@ export default {
       return this._vnode
     }
 
-    const routeName = this.$route.matched[0].path.replace(/\//g, '')
+    // when current route changed, but navigated to the same domain
+    // ex. rewards/point-commodity => rewards/campaign, ignore it
+    if (this.toRoute.split('/')[0] === this.fromRoute.split('/')[0]) {
+      this.clear = false
+      return this._vnode
+    }
+
+    const routeName = this.$route.matched[0].path.replace(/\//, '')
     const component = this.$route.matched[0].components.default
     // if the vNode is not cached, render the new vNode and cache it
     if (!this.cache[routeName]) {
@@ -299,7 +322,7 @@ export default {
     }
 
     let childVNodes = []
-    for (var route in this.cache) {
+    for (let route in this.cache) {
       if (this.cache.hasOwnProperty(route)) {
         childVNodes.push(this.cache[route])
       }
