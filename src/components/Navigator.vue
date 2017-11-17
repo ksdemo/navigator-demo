@@ -220,6 +220,12 @@ export default {
           childVNodes.push(this.cache[route])
         }
       }
+
+      // in this case, the order of main stage vNodes might not match our navigation history
+      childVNodes.sort((a, b) => {
+        return this.history.indexOf(a.data.attrs.route) - this.history.indexOf(b.data.attrs.route)
+      })
+
       return h('div', {
         class: 'navigator'
       }, childVNodes)
