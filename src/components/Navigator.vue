@@ -57,6 +57,34 @@ export default {
   },
   methods: {
     // util functions
+    partition(arr, iteratee) {
+      const part = {
+        'true': [],
+        'false': []
+      }
+
+      for (var i = 0; i < arr.length; i++) {
+        const item = arr[i]
+        if (iteratee(item)) {
+          part['true'].push(item)
+        } else {
+          part['false'].push(item)
+        }
+      }
+      return part
+    },
+    interleavedSort(arr, filterIteratee, sortIteratee) {
+      const part = this.partition(arr, filterIteratee)
+
+      part['true'].sort(sortIteratee)
+
+      for (var i = 0; i < arr.length; i++) {
+        const value = arr[i]
+        if (filterIteratee(value)) {
+          arr[i] = part['true'].shift()
+        }
+      }
+    },
     getNavigatorPageId(key) {
       return 'navigator-page-' + key
     },
@@ -119,15 +147,12 @@ export default {
 
     // handler functions
     mainToMain(vNodes, toRoute) {
-      for (var i = 0; i < vNodes.length; i++) {
-        const vNode = vNodes[i]
-        // move matched vNode to the end of the vNode array
-        if (vNode.data.attrs.route === toRoute) {
-          vNodes.splice(i, 1)
-          vNodes.push(vNode)
-          break
-        }
-      }
+      // reorder main stage vNodes in param vNodes, remain sub stage untouched
+      this.interleavedSort(vNodes, (vNode) => {
+        return this.isMain(vNode.data.attrs.route)
+      }, (aNode, bNode) => {
+        return aNode.data.attrs.route === toRoute
+      })
       setTimeout(() => {
         const toDom = document.querySelector('#' + this.getNavigatorPageId(toRoute))
 
@@ -135,11 +160,20 @@ export default {
       }, 0);
     },
     mainToSub(vNodes, fromRoute, toRoute) {
-      // FIXME: fix a occasional bug when the from vnode is reordered by vue patch engine
+      // ensure that main stage is next to end of vNodes, and sub stage is the end of vNodes
       for (var i = 0; i < vNodes.length; i++) {
         const vNode = vNodes[i]
         // move matched vNode to the end of the vNode array
         if (vNode.data.attrs.route === fromRoute) {
+          vNodes.splice(i, 1)
+          vNodes.push(vNode)
+          break
+        }
+      }
+      for (var i = 0; i < vNodes.length; i++) {
+        const vNode = vNodes[i]
+        // move matched vNode to the end of the vNode array
+        if (vNode.data.attrs.route === toRoute) {
           vNodes.splice(i, 1)
           vNodes.push(vNode)
           break
@@ -162,8 +196,25 @@ export default {
       }, 0);
     },
     subToMain(vNodes, fromRoute, toRoute) {
-      // use mainToMain to reorder main stage content
-      this.mainToMain(vNodes, toRoute)
+      // ensure that main stage is next to end of vNodes, and sub stage is the end of vNodes
+      for (var i = 0; i < vNodes.length; i++) {
+        const vNode = vNodes[i]
+        // move matched vNode to the end of the vNode array
+        if (vNode.data.attrs.route === toRoute) {
+          vNodes.splice(i, 1)
+          vNodes.push(vNode)
+          break
+        }
+      }
+      for (var i = 0; i < vNodes.length; i++) {
+        const vNode = vNodes[i]
+        // move matched vNode to the end of the vNode array
+        if (vNode.data.attrs.route === fromRoute) {
+          vNodes.splice(i, 1)
+          vNodes.push(vNode)
+          break
+        }
+      }
       // then, call transition handler in reverse
       setTimeout(() => {
         const fromDom = document.querySelector('#' + this.getNavigatorPageId(fromRoute))

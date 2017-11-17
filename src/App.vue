@@ -43,7 +43,7 @@ export default {
       el.style.transition = 'all 0.3s'
     },
     onLeave(el) {
-      el.style.transform = 'translateX(-100%)'
+      el.style.transform = 'translateX(-50%)'
       el.style.transition = 'all 0.3s'
     }
   }
