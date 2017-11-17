@@ -29,7 +29,12 @@ export default {
       el.style.transform = 'translateX(100%)'
       el.style.transition = 'all 0.3s'
     },
-    onEnter(el) {
+    onEnter(el, done) {
+      const h = () => {
+        el.removeEventListener('transitionend', h)
+        done()
+      }
+      el.addEventListener('transitionend', h)
       el.style.transform = 'translateX(0%)'
       el.style.transition = 'all 0.3s'
     },

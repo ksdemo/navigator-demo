@@ -50,6 +50,11 @@ export default {
     this.cache = {}
     this.history = []
   },
+  data() {
+    return {
+      clear: false
+    }
+  },
   methods: {
     // util functions
     getNavigatorPageId(key) {
@@ -67,19 +72,8 @@ export default {
       }
       return str
     },
-    renderMatchedRouteComponent() {
-      const component = this.$route.matched[0].components.default
-      return this.$createElement(component)
-    },
-    wrap(cached, routeName) {
-      return this.$createElement('div', {
-        class: 'navigator-page',
-        key: cached.key, // essential! a specified key will enable vue patcher to find the exact cached patcher
-        attrs: {
-          id: this.getNavigatorPageId(routeName),
-          route: routeName
-        }
-      }, [cached.vNode])
+    transitionEndCallback() {
+      this.clear = true
     },
     clearSubCaches(toRoute) {
       for (var routeName in this.cache) {
@@ -89,6 +83,22 @@ export default {
           }
         }
       }
+    },
+
+    // functions that returns vNode
+    renderMatchedRouteComponent() {
+      const component = this.$route.matched[0].components.default
+      return this.$createElement(component)
+    },
+    wrap(vNode, routeName, key) {
+      return this.$createElement('div', {
+        class: 'navigator-page',
+        key: key, // essential! a specified key will enable vue patcher to find the exact cached patcher
+        attrs: {
+          id: this.getNavigatorPageId(routeName),
+          route: routeName
+        }
+      }, [vNode])
     },
 
     // class toggle functions
@@ -121,7 +131,7 @@ export default {
       setTimeout(() => {
         const toDom = document.querySelector('#' + this.getNavigatorPageId(toRoute))
 
-        this.onEnter(toDom)
+        this.onBeforeLeave(toDom)
       }, 0);
     },
     mainToSub(vNodes, fromRoute, toRoute) {
@@ -140,14 +150,14 @@ export default {
         const fromDom = document.querySelector('#' + this.getNavigatorPageId(fromRoute))
         const toDom = document.querySelector('#' + this.getNavigatorPageId(toRoute))
 
-        this.onBeforeLeave(fromDom)
+        this.onBeforeLeave(fromDom, this.transitionEndCallback)
         setTimeout(() => {
-          this.onLeave(fromDom)
+          this.onLeave(fromDom, this.transitionEndCallback)
         }, 50);
 
-        this.onBeforeEnter(toDom)
+        this.onBeforeEnter(toDom, this.transitionEndCallback)
         setTimeout(() => {
-          this.onEnter(toDom)
+          this.onEnter(toDom, this.transitionEndCallback)
         }, 50);
       }, 0);
     },
@@ -159,14 +169,14 @@ export default {
         const fromDom = document.querySelector('#' + this.getNavigatorPageId(fromRoute))
         const toDom = document.querySelector('#' + this.getNavigatorPageId(toRoute))
 
-        this.onLeave(toDom)
+        this.onLeave(toDom, this.transitionEndCallback)
         setTimeout(() => {
-          this.onBeforeLeave(toDom)
+          this.onBeforeLeave(toDom, this.transitionEndCallback)
         }, 50);
 
-        this.onEnter(fromDom)
+        this.onEnter(fromDom, this.transitionEndCallback)
         setTimeout(() => {
-          this.onBeforeEnter(fromDom)
+          this.onBeforeEnter(fromDom, this.transitionEndCallback)
         }, 50);
       }, 0);
     },
@@ -179,38 +189,62 @@ export default {
         const fromDom = document.querySelector('#' + this.getNavigatorPageId(fromRoute))
         const toDom = document.querySelector('#' + this.getNavigatorPageId(toRoute))
 
-        this.onLeave(toDom)
+        this.onLeave(toDom, this.transitionEndCallback)
         setTimeout(() => {
-          this.onBeforeLeave(toDom)
+          this.onBeforeLeave(toDom, this.transitionEndCallback)
         }, 50);
 
-        this.onEnter(fromDom)
+        this.onEnter(fromDom, this.transitionEndCallback)
         setTimeout(() => {
-          this.onBeforeEnter(fromDom)
+          this.onBeforeEnter(fromDom, this.transitionEndCallback)
         }, 50);
       }, 0);
     }
   },
   render(h) {
+    if (!this.$route) {
+      this.clear = false
+      return this._vnode
+    }
+
     this.toRoute = this.$route.path.replace(/\//g, '')
+    // when render function is called by transitionEndCallback (this.clear === true)
+    // because this.cache is updated at this time
+    // we only need to return a composed vnode based on cache
+    if (this.clear) {
+      this.clear = false
+
+      let childVNodes = []
+      for (var route in this.cache) {
+        if (this.cache.hasOwnProperty(route)) {
+          childVNodes.push(this.cache[route])
+        }
+      }
+      return h('div', {
+        class: 'navigator'
+      }, childVNodes)
+    }
+
+    // when the render is triggered by custom vuex store mutation
+    // (when 'this.toRoute' will remain unchanged), ignore it
+    if (this.toRoute === this.fromRoute) {
+      this.clear = false
+      return this._vnode
+    }
 
     const routeName = this.$route.matched[0].path.replace(/\//g, '')
     const component = this.$route.matched[0].components.default
     // if the vNode is not cached, render the new vNode and cache it
     if (!this.cache[routeName]) {
       const routeVNode = this.renderMatchedRouteComponent(component)
-      this.cache[routeName] = {
-        vNode: routeVNode,
-        key: this.randomStr()
-      }
+      // wrap cached vNode with a div
+      this.cache[routeName] = this.wrap(routeVNode, routeName, this.randomStr())
     }
 
-    // wrap cached vNode with a div
     let childVNodes = []
     for (var route in this.cache) {
       if (this.cache.hasOwnProperty(route)) {
-        const wrapped = this.wrap(this.cache[route], route)
-        childVNodes.push(wrapped)
+        childVNodes.push(this.cache[route])
       }
     }
 
@@ -263,9 +297,11 @@ export default {
     // update route record
     this.fromRoute = this.toRoute
     // return composed vNodes to render
-    return h('div', {
+    const composedVNode = h('div', {
       class: 'navigator'
     }, childVNodes)
+    this.clear = false
+    return composedVNode
   }
 
 }
