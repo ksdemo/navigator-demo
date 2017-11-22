@@ -10,12 +10,15 @@
     <router-link :to="{ path: '/view3' }">view3</router-link>
     <router-link :to="{ path: '/view4' }">view4</router-link>
     <navigator
-      :main="['view1', 'view3']"
+      :is-main="isMain"
       :on-before-enter="onBeforeEnter"
       :onEnter="onEnter"
       :on-before-leave="onBeforeLeave"
       :on-leave="onLeave"
-      ></navigator>
+      :on-touch="onTouch"
+      :swipe-back-edge-threshold="0.05"
+      :swipe-back-release-threshold="0.5"
+    ></navigator>
   </div>
 </template>
 
@@ -25,24 +28,50 @@ import Navigator from './components/Navigator'
 export default {
   name: 'app',
   methods: {
-    onBeforeEnter(el) {
+    isMain(route) {
+      return route.path === '/view1' || route.path === '/view3'
+    },
+    onTouch(el, leaveEl, x, y) {
+      const screenWidth = window.document.documentElement.clientWidth
+      const touchXRatio = x / screenWidth
+      el.style.transition = 'none'
+      leaveEl.style.transition = 'none'
+      el.style.transform = `translate(${touchXRatio * 100}%)`
+      leaveEl.style.transform = `translate(${touchXRatio * 50 - 50}%)`
+    },
+    onBeforeEnter(el, done) {
+      const h = () => {
+        done()
+        el.removeEventListener('transitionend', h)
+      }
+      el.addEventListener('transitionend', h)
       el.style.transform = 'translateX(100%)'
       el.style.transition = 'all 0.3s'
     },
     onEnter(el, done) {
       const h = () => {
-        el.removeEventListener('transitionend', h)
         done()
+        el.removeEventListener('transitionend', h)
       }
       el.addEventListener('transitionend', h)
       el.style.transform = 'translateX(0%)'
       el.style.transition = 'all 0.3s'
     },
-    onBeforeLeave(el) {
+    onBeforeLeave(el, done) {
+      const h = () => {
+        done()
+        el.removeEventListener('transitionend', h)
+      }
+      el.addEventListener('transitionend', h)
       el.style.transform = 'translateX(0%)'
       el.style.transition = 'all 0.3s'
     },
-    onLeave(el) {
+    onLeave(el, done) {
+      const h = () => {
+        done()
+        el.removeEventListener('transitionend', h)
+      }
+      el.addEventListener('transitionend', h)
       el.style.transform = 'translateX(-50%)'
       el.style.transition = 'all 0.3s'
     }

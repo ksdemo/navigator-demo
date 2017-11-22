@@ -25,12 +25,12 @@ basic rules:
     - else, push a new page to stack
 
  */
+
+import merge from 'lodash.merge'
+
 export default {
   name: 'navigator',
   props: {
-    main: {
-      type: Array
-    },
     onBeforeEnter: {
       type: Function
     },
@@ -42,6 +42,18 @@ export default {
     },
     onLeave: {
       type: Function
+    },
+    isMain: {
+      type: Function
+    },
+    onTouch: {
+      type: Function
+    },
+    swipeBackEdgeThreshold: {
+      type: Number
+    },
+    swipeBackReleaseThreshold: {
+      type: Number
     }
   },
   created() {
@@ -49,6 +61,7 @@ export default {
     this.toRoute = ''
     this.cache = {}
     this.history = []
+    this.backInvokedByGesture = false
   },
   data() {
     return {
@@ -57,48 +70,22 @@ export default {
   },
   methods: {
     // util functions
-    partition(arr, iteratee) {
-      const part = {
-        'true': [],
-        'false': []
-      }
-
-      for (let i = 0; i < arr.length; i++) {
-        const item = arr[i]
-        if (iteratee(item)) {
-          part['true'].push(item)
-        } else {
-          part['false'].push(item)
+    // remove redundant part of a route path, and transform '/' to '-'
+    // for main route, this leaves only first part of the path
+    // for sub rmote, this leaves everything before the first dynamic part ('/:')
+    getKeyForRoute(path) {
+      let key = path.slice(1) // remove first ‘/’
+      key = key.split('/')
+      for (let i = 0; i < key.length; i++) {
+        if (key[i][0] === ':') { // this is a dynamic part of the route path
+          key.splice(i) // truncate from here
         }
       }
-      return part
-    },
-    interleavedSort(arr, filterIteratee, sortIteratee) {
-      const part = this.partition(arr, filterIteratee)
-
-      part['true'].sort(sortIteratee)
-
-      for (let i = 0; i < arr.length; i++) {
-        const value = arr[i]
-        if (filterIteratee(value)) {
-          arr[i] = part['true'].shift()
-        }
-      }
+      return key.join('-')
     },
     // truncate sub paths and parameters, and replace slashes with hyphen, as is not a valid dom selector
     getNavigatorPageId(key) {
       return 'navigator-page-' + key.replace(/\/.*/, '').replace(/\//g, '-')
-    },
-    // a router view is a main stage, when the path name starts with the keyword
-    isMain(path) {
-      for (var i = 0; i < this.main.length; i++) {
-        const _path = this.main[i]
-        const regExp = new RegExp('^' + _path)
-        if (regExp.test(path)) {
-          return true
-        }
-      }
-      return false
     },
     randomStr() {
       const possible = '0123456789abcdef'
@@ -112,89 +99,52 @@ export default {
     transitionEndCallback() {
       this.clear = true
     },
-    clearSubCaches(toRoute) {
-      for (let routeName in this.cache) {
-        if (this.cache.hasOwnProperty(routeName)) {
-          if (!this.isMain(routeName) && toRoute !== routeName) {
-            delete this.cache[routeName]
-          }
-        }
-      }
-    },
 
     // functions that returns vNode
-    renderMatchedRouteComponent() {
-      const component = this.$route.matched[0].components.default
-      return this.$createElement(component)
-    },
-    wrap(vNode, routeName, key) {
-      return this.$createElement('div', {
-        class: 'navigator-page',
-        key: key, // essential! a specified key will enable vue patcher to find the exact cached patcher
+    wrap(options) {
+      const { route, node, key, outerAttrs } = options
+      const defaultNodeOption = {
+        class: {
+          'navigator-page': true
+        },
+        key,
         attrs: {
-          id: this.getNavigatorPageId(routeName),
-          route: routeName.replace(/\/.*/, '').replace(/\//g, '-')
+          id: this.getNavigatorPageId(route),
+          route
         }
-      }, [vNode])
-    },
-
-    // class toggle functions
-    addClass(key, className) {
-      const dom = document.querySelector('#' + this.getNavigatorPageId(key))
-      if (dom.className) {
-        if (dom.className.indexOf('navigator-' + className) < 0) {
-          dom.className += ' navigator-' + className
-        }
-      } else {
-        dom.className = 'navigator-' + className
       }
-    },
-    removeClass(key, className) {
-      const dom = document.querySelector('#' + this.getNavigatorPageId(key))
-      dom.className = dom.className.replace('navigator-' + className, '').replace(/ {2,}/, '').replace(/ +$/, '')
+      const nodeOption = merge(defaultNodeOption, outerAttrs)
+      return this.$createElement('div', nodeOption, [node])
     },
 
     // handler functions
-    mainToMain(vNodes, toRoute) {
-      // reorder main stage vNodes in param vNodes, remain sub stage untouched
-      this.interleavedSort(vNodes, (vNode) => {
-        return this.isMain(vNode.data.attrs.route)
-      }, (aNode, bNode) => {
-        return aNode.data.attrs.route === toRoute.replace(/\/.*/, '').replace(/\//g, '-')
-      })
-      setTimeout(() => {
-        const toDom = document.querySelector('#' + this.getNavigatorPageId(toRoute))
-
-        this.onBeforeLeave(toDom)
-      }, 0);
-    },
-    mainToSub(vNodes, fromRoute, toRoute) {
-      // ensure that main stage is next to end of vNodes, and sub stage is the end of vNodes
-      for (let i = 0; i < vNodes.length; i++) {
-        const vNode = vNodes[i]
-        // move matched vNode to the end of the vNode array
-        if (vNode.data.attrs.route === fromRoute) {
-          vNodes.splice(i, 1)
-          vNodes.push(vNode)
-          break
-        }
-      }
-
-      for (let i = 0; i < vNodes.length; i++) {
-        const vNode = vNodes[i]
-        // move matched vNode to the end of the vNode array
-        if (vNode.data.attrs.route === toRoute) {
-          // make toDom invisible before mounting
-          if (!vNode.data.style) {
-            vNode.data.style = {}
+    mainToMain(toRoute) {
+      // hide main stage that does not match current route
+      // this fixes the issue when there is element on bottom main stage page whose z-index is too big
+      for (var route in this.cache) {
+        if (this.cache.hasOwnProperty(route)) {
+          const cached = this.cache[route]
+          if (this.isMain(cached.$route)) {
+            if (cached.route === toRoute) {
+              cached.outerAttrs.class = {
+                'navigator-page-hidden': false
+              }
+            } else {
+              cached.outerAttrs.class = {
+                'navigator-page-hidden': true
+              }
+            }
           }
-          vNode.data.style.display = 'none'
-          vNodes.splice(i, 1)
-          vNodes.push(vNode)
-          break
         }
       }
-
+    },
+    mainToSub(fromRoute, toRoute) {
+      // the cached vnode for toRoute need to be hidden before mounting
+      const cachedNode = this.cache[toRoute]
+      cachedNode.outerAttrs.class = {
+        'navigator-page-hidden': true
+      }
+      // after mounting, call transition hooks to execute transition
       setTimeout(() => {
         const fromDom = document.querySelector('#' + this.getNavigatorPageId(fromRoute))
         const toDom = document.querySelector('#' + this.getNavigatorPageId(toRoute))
@@ -204,42 +154,39 @@ export default {
           this.onLeave(fromDom, this.transitionEndCallback)
         }, 50);
 
-        toDom.style.display = 'block'
+        // make toDom visible at this time, and restore state in this.cache accordingly
+        toDom.className = toDom.className.replace(/ ?navigator-page-hidden/, '')
+        cachedNode.outerAttrs.class = {
+          'navigator-page-hidden': false
+        }
         this.onBeforeEnter(toDom, this.transitionEndCallback)
         setTimeout(() => {
           this.onEnter(toDom, this.transitionEndCallback)
         }, 50);
-      }, 0);
+      }, 0)
     },
-    subToMain(vNodes, fromRoute, toRoute) {
-      // ensure that main stage is next to end of vNodes, and sub stage is the end of vNodes
-      for (let i = 0; i < vNodes.length; i++) {
-        const vNode = vNodes[i]
-        // move matched vNode to the end of the vNode array
-        if (vNode.data.attrs.route === toRoute) {
-          vNodes.splice(i, 1)
-          vNodes.push(vNode)
-          break
-        }
+    subToMain(fromRoute, toRoute) {
+      // hide main stage that does not match current route
+      // this fixes the issue when there is element on bottom main stage page whose z-index is too big
+      this.mainToMain(toRoute)
+      const cachedNode = this.cache[toRoute]
+      cachedNode.outerAttrs.class = {
+        'navigator-page-hidden': true
       }
-      for (let i = 0; i < vNodes.length; i++) {
-        const vNode = vNodes[i]
-        // move matched vNode to the end of the vNode array
-        if (vNode.data.attrs.route === fromRoute) {
-          vNodes.splice(i, 1)
-          vNodes.push(vNode)
-          break
-        }
-      }
-      // then, call transition handler in reverse
+      // call transition handler in reverse
       setTimeout(() => {
         const fromDom = document.querySelector('#' + this.getNavigatorPageId(fromRoute))
         const toDom = document.querySelector('#' + this.getNavigatorPageId(toRoute))
-
         this.onLeave(toDom, this.transitionEndCallback)
         setTimeout(() => {
           this.onBeforeLeave(toDom, this.transitionEndCallback)
         }, 50);
+
+        // make toDom visible at this time, and restore state in this.cache accordingly
+        toDom.className = toDom.className.replace(/ ?navigator-page-hidden/, '')
+        cachedNode.outerAttrs.class = {
+          'navigator-page-hidden': false
+        }
 
         this.onEnter(fromDom, this.transitionEndCallback)
         setTimeout(() => {
@@ -247,11 +194,37 @@ export default {
         }, 50);
       }, 0);
     },
-    subToSub(vNodes, fromRoute, toRoute) {
-      this.mainToSub(vNodes, fromRoute, toRoute)
+    subToSub(fromRoute, toRoute) {
+      // the cached vnode for toRoute need to be hidden before mounting
+      this.mainToMain(toRoute)
+      const cachedNode = this.cache[toRoute]
+      cachedNode.outerAttrs.class = {
+        'navigator-page-hidden': true
+      }
+      // after mounting, call transition hooks to execute transition
+      setTimeout(() => {
+        const fromDom = document.querySelector('#' + this.getNavigatorPageId(fromRoute))
+        const toDom = document.querySelector('#' + this.getNavigatorPageId(toRoute))
+
+        this.onBeforeLeave(fromDom, this.transitionEndCallback)
+        setTimeout(() => {
+          this.onLeave(fromDom, this.transitionEndCallback)
+        }, 50);
+
+        // make toDom visible at this time, and restore state in this.cache accordingly
+        toDom.className = toDom.className.replace(/ ?navigator-page-hidden/, '')
+        cachedNode.outerAttrs.class = {
+          'navigator-page-hidden': false
+        }
+        this.onBeforeEnter(toDom, this.transitionEndCallback)
+        setTimeout(() => {
+          this.onEnter(toDom, this.transitionEndCallback)
+        }, 50);
+      }, 0)
     },
     // from sub page to a visited sub page
-    subToVisited(vNode, fromRoute, toRoute) {
+    subToVisited(fromRoute, toRoute) {
+      // call transition handler in reverse
       setTimeout(() => {
         const fromDom = document.querySelector('#' + this.getNavigatorPageId(fromRoute))
         const toDom = document.querySelector('#' + this.getNavigatorPageId(toRoute))
@@ -266,36 +239,160 @@ export default {
           this.onBeforeEnter(fromDom, this.transitionEndCallback)
         }, 50);
       }, 0);
+    },
+
+    // touch handler functions
+    handleTouchStart(e) {
+      // when navigated to a main stage, there is no need to handle touch event
+      if (this.isMain(this.$route)) {
+        return
+      }
+
+      // when the touch x is greater than threshold, this is no need to handle touch event
+      const x = e.touches[0].pageX
+      if (x / window.document.documentElement.clientWidth > this.swipeBackEdgeThreshold) {
+        return
+      }
+      this.touching = true
+    },
+
+    handleTouchMove(e) {
+      if (this.touching) {
+        const childrenEl = this.$el.children
+        const el = Array.prototype.slice.call(childrenEl, -1)[0]
+        const leaveEl = Array.prototype.slice.call(childrenEl, -2, -1)[0]
+        this.onTouch(el, leaveEl, e.touches[0].pageX, e.touches[0].pageY)
+      }
+    },
+
+    handleTouchEnd(e) {
+      if (this.touching) {
+        const childrenEl = this.$el.children
+        const el = Array.prototype.slice.call(childrenEl, -1)[0]
+        const leaveEl = Array.prototype.slice.call(childrenEl, -2, -1)[0]
+        const x = e.changedTouches[0].pageX
+        const y = e.changedTouches[0].pageY
+        if (x / window.document.documentElement.clientWidth > this.swipeBackReleaseThreshold) {
+          // navigate back, manually set route to previous location
+          this.onBeforeLeave(leaveEl, () => {
+            this.backInvokedByGesture = true
+            this.transitionEndCallback()
+            this.$router.go(-1)
+          })
+          this.onBeforeEnter(el, () => {})
+        } else {
+          // stay on the same stage
+          this.onLeave(leaveEl, () => {})
+          this.onEnter(el, () => {})
+        }
+      }
+      this.touching = false
     }
   },
   render(h) {
+    // in case where $route is not defined
     if (!this.$route) {
       this.clear = false
       return this._vnode
     }
 
-    this.toRoute = this.$route.path.replace(/\//, '')
+    this.toRoute = this.getKeyForRoute(this.$route.matched[0].path)
+    // if the route change is invoked by gesture, manually clear last entry of this.history and this.cache
+    // and return composed routers
+    if (this.backInvokedByGesture) {
+      this.backInvokedByGesture = false
+      const toDelete = this.history.pop()
+      delete this.cache[toDelete]
+
+      const children = []
+      for (let i = 0; i < this.history.length; i++) {
+        const cached = this.cache[this.history[i]]
+        const node = this.wrap(cached)
+        children.push(node)
+      }
+
+      // return composed vNodes to render
+      const composedVNode = h('div', {
+        class: 'navigator',
+        on: {
+          touchmove: this.handleTouchMove,
+          touchstart: this.handleTouchStart,
+          touchend: this.handleTouchEnd
+        }
+      }, children)
+      return composedVNode
+    }
     // when render function is called by transitionEndCallback (this.clear === true)
     // because this.cache is updated at this time
     // we only need to return a composed vnode based on cache
     if (this.clear) {
       this.clear = false
-
-      let childVNodes = []
-      for (let route in this.cache) {
-        if (this.cache.hasOwnProperty(route)) {
-          childVNodes.push(this.cache[route])
+      // clear history item, if now on main stage, exclude every sub stage history entry
+      // clear this.cache accordingly
+      if (this.isMain(this.cache[this.toRoute].$route)) {
+        this.history = this.history.filter((route) => {
+          return this.isMain(this.cache[route].$route)
+        })
+        for (let route in this.cache) {
+          if (this.cache.hasOwnProperty(route)) {
+            if (!this.isMain(this.cache[route].$route)) {
+              delete this.cache[route]
+            }
+          }
+        }
+      // else, truncate every sub stage history entry after current sub stage
+      // clear this.cache accordingly
+      } else {
+        const toClear = this.history.splice(this.history.indexOf(this.toRoute) + 1)
+        for (let i = 0; i < toClear.length; i++) {
+          delete this.cache[toClear[i]]
         }
       }
 
-      // in this case, the order of main stage vNodes might not match our navigation history
-      childVNodes.sort((a, b) => {
-        return this.history.indexOf(a.data.attrs.route) - this.history.indexOf(b.data.attrs.route)
-      })
+      // reset every main stage except the one beneath sub stage to normal position by calling transition callback
+      setTimeout(() => {
+        const doms = document.querySelectorAll('.navigator-page')
+        for (var i = 0; i < doms.length; i++) {
+          const route = doms[i].getAttribute('route')
+          if (this.isMain(this.cache[route].$route)) {
+            this.onBeforeLeave(doms[i], () => {})
+          }
+        }
+      }, 0)
 
-      return h('div', {
-        class: 'navigator'
-      }, childVNodes)
+      // if navigated to the first and only sub stage, make the main stage beneath visible
+      if (!this.isMain(this.$route) && this.history.filter((route) => {
+        return !this.isMain(this.cache[route].$route)
+      }).length === 1) {
+        const mainRoutes = this.history.filter((route) => {
+          return this.isMain(this.cache[route].$route)
+        })
+        const lastMainRoute = mainRoutes[mainRoutes.length - 1]
+        this.cache[lastMainRoute].outerAttrs.class = {
+          'navigator-page-hidden': false
+        }
+      }
+
+      // compose the final vnode tree
+      const children = []
+      for (let i = 0; i < this.history.length; i++) {
+        const cached = this.cache[this.history[i]]
+        const node = this.wrap(cached)
+        children.push(node)
+      }
+
+      // update route record
+      this.fromRoute = this.toRoute
+      // return composed vNodes to render
+      const composedVNode = h('div', {
+        class: 'navigator',
+        on: {
+          touchmove: this.handleTouchMove,
+          touchstart: this.handleTouchStart,
+          touchend: this.handleTouchEnd
+        }
+      }, children)
+      return composedVNode
     }
 
     // when the render is triggered by custom vuex store mutation
@@ -305,82 +402,92 @@ export default {
       return this._vnode
     }
 
-    // when current route changed, but navigated to the same domain
-    // ex. rewards/point-commodity => rewards/campaign, ignore it
-    if (this.toRoute.split('/')[0] === this.fromRoute.split('/')[0]) {
-      this.clear = false
-      return this._vnode
-    }
-
-    const routeName = this.$route.matched[0].path.replace(/\//, '')
-    const component = this.$route.matched[0].components.default
     // if the vNode is not cached, render the new vNode and cache it
-    if (!this.cache[routeName]) {
-      const routeVNode = this.renderMatchedRouteComponent(component)
+    if (!this.cache[this.toRoute]) {
+      const component = this.$route.matched[0].components.default
+      const routeVNode = h(component)
       // wrap cached vNode with a div
-      this.cache[routeName] = this.wrap(routeVNode, routeName, this.randomStr())
-    }
-
-    let childVNodes = []
-    for (let route in this.cache) {
-      if (this.cache.hasOwnProperty(route)) {
-        childVNodes.push(this.cache[route])
+      this.cache[this.toRoute] = {
+        route: this.toRoute,
+        $route: this.$route, // the route rule object
+        node: routeVNode,
+        key: this.randomStr(),
+        outerAttrs: {}
       }
     }
 
     // handle different navigation cases.
+    // this.history act as a page order indicator
+    // as main stage is cached, there could be multiple main stage entries in this.history
 
     // if no from route (initial render)
     if (!this.fromRoute) {
-      // to main stage
-      if (this.isMain(this.toRoute)) {
-        this.history = [this.toRoute]
-      // to sub stage
-      }
+      this.history = [this.toRoute]
     } else {
       // from main stage
-      if (this.isMain(this.fromRoute)) {
+      if (this.isMain(this.cache[this.fromRoute].$route)) {
         // to main stage
-        if (this.isMain(this.toRoute)) {
-          this.mainToMain(childVNodes, this.toRoute)
-          this.history = [this.toRoute] // truncate history to only main stage item
-          this.clearSubCaches() // truncate cached vnodes for sub stage
+        if (this.isMain(this.cache[this.toRoute].$route)) {
+          // this.mainToMain(childVNodes, this.toRoute)
+          if (this.history.indexOf(this.toRoute) > -1) {
+            this.history.splice(this.history.indexOf(this.toRoute), 1)
+          }
+          this.history.push(this.toRoute)
+          this.mainToMain(this.toRoute)
         // to sub stage
         } else {
-          this.mainToSub(childVNodes, this.fromRoute, this.toRoute)
           this.history.push(this.toRoute)
+          this.mainToSub(this.fromRoute, this.toRoute)
         }
       // from sub stage
       } else {
         // to main stage
-        if (this.isMain(this.toRoute)) {
-          this.subToMain(childVNodes, this.fromRoute, this.toRoute)
-          this.history = [this.toRoute] // truncate history to only main stage item
-          this.clearSubCaches() // truncate cached vnode fors sub stage
+        if (this.isMain(this.cache[this.toRoute].$route)) {
+          // exclude route item that is not a main stage
+          this.history = this.history.filter((route) => {
+            return this.isMain(this.cache[route].$route)
+          })
+          // then reorder
+          if (this.history.indexOf(this.toRoute) > -1) {
+            this.history.splice(this.history.indexOf(this.toRoute), 1)
+          }
+          this.history.push(this.toRoute)
+          this.history.push(this.fromRoute) // this should also be kept in history temporarily, for transition
+          this.subToMain(this.fromRoute, this.toRoute)
         // to sub stage
         } else {
           // if the sub to navigate is already visited
           if (this.history.indexOf(this.toRoute) > -1) {
-            this.subToVisited(childVNodes, this.fromRoute, this.toRoute)
-            const i = this.history.indexOf(this.toRoute)
-            this.history.splice(i + 1) // truncate history to current page
-            // truncate cached vnodes, leaving nodes for main stage and current page
-            this.clearSubCaches(this.toRoute)
+            this.history.splice(this.history.indexOf(this.toRoute) + 1) // truncate history to current page
+            this.history.push(this.fromRoute) // this should also be kept in history temporarily, for transition
+            this.subToVisited(this.fromRoute, this.toRoute)
           } else {
-            this.subToSub(childVNodes, this.fromRoute, this.toRoute)
             this.history.push(this.toRoute)
+            this.subToSub(this.fromRoute, this.toRoute)
           }
         }
       }
     }
-
     // update route record
     this.fromRoute = this.toRoute
+    this.clear = false
+    // compose the final vnode tree
+    const children = []
+    for (let i = 0; i < this.history.length; i++) {
+      const cached = this.cache[this.history[i]]
+      const node = this.wrap(cached)
+      children.push(node)
+    }
+
     // return composed vNodes to render
     const composedVNode = h('div', {
-      class: 'navigator'
-    }, childVNodes)
-    this.clear = false
+      class: 'navigator',
+      on: {
+        touchmove: this.handleTouchMove,
+        touchstart: this.handleTouchStart,
+        touchend: this.handleTouchEnd
+      }
+    }, children)
     return composedVNode
   }
 
