@@ -7,4 +7,5 @@ app.use('/static', express.static(path.resolve(__dirname, 'dist', 'static')))
 app.get('/', (req, res) => {
   res.sendFile(path.resolve(__dirname, 'dist', 'index.html'))
 })
-app.listen(80)
+app.listen(process.env.PORT)
+console.log('App running on ' + process.env.PORT)
