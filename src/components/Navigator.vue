@@ -1,8 +1,8 @@
 <script>
 
 /*
-The navigator accept a 'main' prop, which receives an array containing route
-paths that should not be 'stacked' while navigating.
+The navigator accept a 'isMain' prop, which receives a filter function that determines
+if a page should not be 'stacked' while navigating.
 
 A stacked page will be shown in sub stage, which will slide in from right when initialized,
 and the page will be initialized every time.
@@ -146,22 +146,22 @@ export default {
       }
       // after mounting, call transition hooks to execute transition
       setTimeout(() => {
-        const fromDom = document.querySelector('#' + this.getNavigatorPageId(fromRoute))
-        const toDom = document.querySelector('#' + this.getNavigatorPageId(toRoute))
+        const leaveEl = document.querySelector('#' + this.getNavigatorPageId(fromRoute))
+        const enterEl = document.querySelector('#' + this.getNavigatorPageId(toRoute))
 
-        this.onBeforeLeave(fromDom, this.transitionEndCallback)
+        this.onBeforeLeave(leaveEl, this.transitionEndCallback)
         setTimeout(() => {
-          this.onLeave(fromDom, this.transitionEndCallback)
+          this.onLeave(leaveEl, this.transitionEndCallback)
         }, 50);
 
-        // make toDom visible at this time, and restore state in this.cache accordingly
-        toDom.className = toDom.className.replace(/ ?navigator-page-hidden/, '')
+        // make enterEl visible at this time, and restore state in this.cache accordingly
+        enterEl.className = enterEl.className.replace(/ ?navigator-page-hidden/, '')
         cachedNode.outerAttrs.class = {
           'navigator-page-hidden': false
         }
-        this.onBeforeEnter(toDom, this.transitionEndCallback)
+        this.onBeforeEnter(enterEl, this.transitionEndCallback)
         setTimeout(() => {
-          this.onEnter(toDom, this.transitionEndCallback)
+          this.onEnter(enterEl, this.transitionEndCallback)
         }, 50);
       }, 0)
     },
@@ -175,22 +175,22 @@ export default {
       }
       // call transition handler in reverse
       setTimeout(() => {
-        const fromDom = document.querySelector('#' + this.getNavigatorPageId(fromRoute))
-        const toDom = document.querySelector('#' + this.getNavigatorPageId(toRoute))
-        this.onLeave(toDom, this.transitionEndCallback)
+        const leaveEl = document.querySelector('#' + this.getNavigatorPageId(fromRoute))
+        const enterEl = document.querySelector('#' + this.getNavigatorPageId(toRoute))
+        this.onLeave(enterEl, this.transitionEndCallback)
         setTimeout(() => {
-          this.onBeforeLeave(toDom, this.transitionEndCallback)
+          this.onBeforeLeave(enterEl, this.transitionEndCallback)
         }, 50);
 
-        // make toDom visible at this time, and restore state in this.cache accordingly
-        toDom.className = toDom.className.replace(/ ?navigator-page-hidden/, '')
+        // make enterEl visible at this time, and restore state in this.cache accordingly
+        enterEl.className = enterEl.className.replace(/ ?navigator-page-hidden/, '')
         cachedNode.outerAttrs.class = {
           'navigator-page-hidden': false
         }
 
-        this.onEnter(fromDom, this.transitionEndCallback)
+        this.onEnter(leaveEl, this.transitionEndCallback)
         setTimeout(() => {
-          this.onBeforeEnter(fromDom, this.transitionEndCallback)
+          this.onBeforeEnter(leaveEl, this.transitionEndCallback)
         }, 50);
       }, 0);
     },
@@ -203,22 +203,22 @@ export default {
       }
       // after mounting, call transition hooks to execute transition
       setTimeout(() => {
-        const fromDom = document.querySelector('#' + this.getNavigatorPageId(fromRoute))
-        const toDom = document.querySelector('#' + this.getNavigatorPageId(toRoute))
+        const leaveEl = document.querySelector('#' + this.getNavigatorPageId(fromRoute))
+        const enterEl = document.querySelector('#' + this.getNavigatorPageId(toRoute))
 
-        this.onBeforeLeave(fromDom, this.transitionEndCallback)
+        this.onBeforeLeave(leaveEl, this.transitionEndCallback)
         setTimeout(() => {
-          this.onLeave(fromDom, this.transitionEndCallback)
+          this.onLeave(leaveEl, this.transitionEndCallback)
         }, 50);
 
-        // make toDom visible at this time, and restore state in this.cache accordingly
-        toDom.className = toDom.className.replace(/ ?navigator-page-hidden/, '')
+        // make enterEl visible at this time, and restore state in this.cache accordingly
+        enterEl.className = enterEl.className.replace(/ ?navigator-page-hidden/, '')
         cachedNode.outerAttrs.class = {
           'navigator-page-hidden': false
         }
-        this.onBeforeEnter(toDom, this.transitionEndCallback)
+        this.onBeforeEnter(enterEl, this.transitionEndCallback)
         setTimeout(() => {
-          this.onEnter(toDom, this.transitionEndCallback)
+          this.onEnter(enterEl, this.transitionEndCallback)
         }, 50);
       }, 0)
     },
@@ -226,17 +226,17 @@ export default {
     subToVisited(fromRoute, toRoute) {
       // call transition handler in reverse
       setTimeout(() => {
-        const fromDom = document.querySelector('#' + this.getNavigatorPageId(fromRoute))
-        const toDom = document.querySelector('#' + this.getNavigatorPageId(toRoute))
+        const leaveEl = document.querySelector('#' + this.getNavigatorPageId(fromRoute))
+        const enterEl = document.querySelector('#' + this.getNavigatorPageId(toRoute))
 
-        this.onLeave(toDom, this.transitionEndCallback)
+        this.onLeave(enterEl, this.transitionEndCallback)
         setTimeout(() => {
-          this.onBeforeLeave(toDom, this.transitionEndCallback)
+          this.onBeforeLeave(enterEl, this.transitionEndCallback)
         }, 50);
 
-        this.onEnter(fromDom, this.transitionEndCallback)
+        this.onEnter(leaveEl, this.transitionEndCallback)
         setTimeout(() => {
-          this.onBeforeEnter(fromDom, this.transitionEndCallback)
+          this.onBeforeEnter(leaveEl, this.transitionEndCallback)
         }, 50);
       }, 0);
     },
@@ -259,9 +259,9 @@ export default {
     handleTouchMove(e) {
       if (this.touching) {
         const childrenEl = this.$el.children
-        const el = Array.prototype.slice.call(childrenEl, -1)[0]
+        const enterEl = Array.prototype.slice.call(childrenEl, -1)[0]
         const leaveEl = Array.prototype.slice.call(childrenEl, -2, -1)[0]
-        this.onTouch(el, leaveEl, e.touches[0].pageX, e.touches[0].pageY)
+        this.onTouch(enterEl, leaveEl, e.touches[0].pageX, e.touches[0].pageY)
       }
     },
 

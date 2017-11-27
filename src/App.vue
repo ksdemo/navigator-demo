@@ -31,12 +31,12 @@ export default {
     isMain(route) {
       return route.path === '/view1' || route.path === '/view3'
     },
-    onTouch(el, leaveEl, x, y) {
+    onTouch(enterEl, leaveEl, x, y) {
       const screenWidth = window.document.documentElement.clientWidth
       const touchXRatio = x / screenWidth
-      el.style.transition = 'none'
+      enterEl.style.transition = 'none'
       leaveEl.style.transition = 'none'
-      el.style.transform = `translate(${touchXRatio * 100}%)`
+      enterEl.style.transform = `translate(${touchXRatio * 100}%)`
       leaveEl.style.transform = `translate(${touchXRatio * 50 - 50}%)`
     },
     onBeforeEnter(el, done) {
