@@ -26,7 +26,7 @@ basic rules:
 
  */
 
-import merge from 'lodash.merge'
+import _ from 'lodash'
 
 export default {
   name: 'navigator',
@@ -113,7 +113,7 @@ export default {
           route
         }
       }
-      const nodeOption = merge(defaultNodeOption, outerAttrs)
+      const nodeOption = _.merge(defaultNodeOption, outerAttrs)
       return this.$createElement('div', nodeOption, [node])
     },
 
