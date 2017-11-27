@@ -428,7 +428,6 @@ export default {
       if (this.isMain(this.cache[this.fromRoute].$route)) {
         // to main stage
         if (this.isMain(this.cache[this.toRoute].$route)) {
-          // this.mainToMain(childVNodes, this.toRoute)
           if (this.history.indexOf(this.toRoute) > -1) {
             this.history.splice(this.history.indexOf(this.toRoute), 1)
           }
